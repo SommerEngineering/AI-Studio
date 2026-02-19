@@ -30,7 +30,7 @@ public static partial class PluginFactory
     /// </remarks>
     public static async Task LoadAll(CancellationToken cancellationToken = default)
     {
-        if (!IS_INITIALIZED)
+        if (!IsInitialized)
         {
             LOG.LogError("PluginFactory is not initialized. Please call Setup() before using it.");
             return;
@@ -104,16 +104,40 @@ public static partial class PluginFactory
             
                     LOG.LogInformation($"Successfully loaded plugin: '{pluginMainFile}' (Id='{plugin.Id}', Type='{plugin.Type}', Name='{plugin.Name}', Version='{plugin.Version}', Authors='{string.Join(", ", plugin.Authors)}')");
 
-                    // For configuration plugins, validate that the plugin ID matches the enterprise config ID
-                    // (the directory name under which the plugin was downloaded):
-                    if (plugin.Type is PluginType.CONFIGURATION && pluginPath.StartsWith(CONFIGURATION_PLUGINS_ROOT, StringComparison.OrdinalIgnoreCase))
+                    var isConfigurationPluginInConfigDirectory =
+                        plugin.Type is PluginType.CONFIGURATION &&
+                        pluginPath.StartsWith(CONFIGURATION_PLUGINS_ROOT, StringComparison.OrdinalIgnoreCase);
+
+                    var isManagedByConfigServer = false;
+                    Guid? managedConfigurationId = null;
+                    if (plugin is PluginConfiguration configPlugin)
                     {
-                        var directoryName = Path.GetFileName(pluginPath);
-                        if (Guid.TryParse(directoryName, out var enterpriseConfigId) && enterpriseConfigId != plugin.Id)
-                            LOG.LogWarning($"The configuration plugin's ID ('{plugin.Id}') does not match the enterprise configuration ID ('{enterpriseConfigId}'). These IDs should be identical. Please update the plugin's ID field to match the enterprise configuration ID.");
+                        if (configPlugin.DeployedUsingConfigServer.HasValue)
+                            isManagedByConfigServer = configPlugin.DeployedUsingConfigServer.Value;
+                        
+                        else if (isConfigurationPluginInConfigDirectory)
+                        {
+                            isManagedByConfigServer = true;
+                            LOG.LogWarning($"The configuration plugin '{plugin.Id}' does not define 'DEPLOYED_USING_CONFIG_SERVER'. Falling back to the plugin path and treating it as managed because it is stored under '{CONFIGURATION_PLUGINS_ROOT}'.");
+                        }
                     }
 
-                    AVAILABLE_PLUGINS.Add(new PluginMetadata(plugin, pluginPath));
+                    // For configuration plugins, validate that the plugin ID matches the enterprise config ID
+                    // (the directory name under which the plugin was downloaded):
+                    if (isConfigurationPluginInConfigDirectory && isManagedByConfigServer)
+                    {
+                        var directoryName = Path.GetFileName(pluginPath);
+                        if (Guid.TryParse(directoryName, out var enterpriseConfigId))
+                        {
+                            managedConfigurationId = enterpriseConfigId;
+                            if (enterpriseConfigId != plugin.Id)
+                                LOG.LogWarning($"The configuration plugin's ID ('{plugin.Id}') does not match the enterprise configuration ID ('{enterpriseConfigId}'). These IDs should be identical. Please update the plugin's ID field to match the enterprise configuration ID.");
+                        }
+                        else
+                            LOG.LogWarning($"Could not determine the managed configuration ID for configuration plugin '{plugin.Id}'. The plugin directory '{pluginPath}' does not end with a valid GUID.");
+                    }
+
+                    AVAILABLE_PLUGINS.Add(new PluginMetadata(plugin, pluginPath, isManagedByConfigServer, managedConfigurationId));
                 }
                 catch (Exception e)
                 {
