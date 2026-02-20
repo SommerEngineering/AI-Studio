@@ -219,6 +219,9 @@ public static partial class PluginFactory
         if(ManagedConfiguration.IsConfigurationLeftOver(x => x.App, x => x.EnabledPreviewFeatures, AVAILABLE_PLUGINS))
             wasConfigurationChanged = true;
         
+        if(ManagedConfiguration.IsPluginContributionLeftOver(x => x.App, x => x.EnabledPreviewFeatures, AVAILABLE_PLUGINS))
+            wasConfigurationChanged = true;
+        
         // Check for the transcription provider:
         if(ManagedConfiguration.IsConfigurationLeftOver(x => x.App, x => x.UseTranscriptionProvider, AVAILABLE_PLUGINS))
             wasConfigurationChanged = true;
